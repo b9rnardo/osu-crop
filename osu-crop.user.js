@@ -91,7 +91,6 @@
             font-family: 'Torus', 'Quicksand', sans-serif;
             font-weight: 700;
             letter-spacing: 0.06em;
-            text-transform: uppercase;
             position: relative;
             z-index: 1;
             text-shadow: 0 1px 4px rgba(0,0,0,0.25);
@@ -194,64 +193,7 @@
 
         #acrop-bottom-spacer { flex: 1; }
 
-        #acrop-zoom-group {
-            display: flex;
-            align-items: center;
-            gap: 6px;
-            background: rgba(255, 255, 255, 0.04);
-            border-radius: 8px;
-            padding: 4px 10px;
-        }
-        #acrop-zoom-label {
-            color: #6c6c8a;
-            font-size: 10px;
-            font-family: 'Torus', 'Quicksand', sans-serif;
-            font-weight: 700;
-            letter-spacing: 0.08em;
-            text-transform: uppercase;
-            line-height: 34px;
-        }
-        #acrop-zoom-slider {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 80px;
-            height: 34px;
-            background: transparent;
-            outline: none;
-            cursor: pointer;
-            margin: 0;
-            padding: 0;
-        }
-        #acrop-zoom-slider::-webkit-slider-runnable-track {
-            height: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 2px;
-        }
-        #acrop-zoom-slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            appearance: none;
-            width: 14px;
-            height: 14px;
-            border-radius: 50%;
-            background: #ccc;
-            border: 2px solid #1e1e2e;
-            cursor: pointer;
-            margin-top: -5px;
-        }
-        #acrop-zoom-slider::-moz-range-track {
-            height: 4px;
-            background: rgba(255, 255, 255, 0.1);
-            border-radius: 2px;
-            border: none;
-        }
-        #acrop-zoom-slider::-moz-range-thumb {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background: #ccc;
-            border: 2px solid #1e1e2e;
-            cursor: pointer;
-        }
+
 
         /* ── action buttons ── */
         #acrop-actions {
@@ -268,7 +210,6 @@
             cursor: pointer;
             font-family: 'Torus', 'Quicksand', sans-serif;
             letter-spacing: 0.05em;
-            text-transform: uppercase;
             transition: all 0.2s ease;
             display: flex;
             align-items: center;
@@ -362,34 +303,31 @@
             <div id="acrop-box">
                 <div id="acrop-header">
                     <span id="acrop-header-icon">${ICONS.osu}</span>
-                    <h2>Crop Avatar</h2>
+                    <h2>crop avatar!</h2>
                 </div>
                 <div id="acrop-body">
                     <p id="acrop-hint">
                         ${ICONS.info}
-                        Drag to reposition &middot; Resize the selection &middot; Scroll to zoom
+                        drag to reposition &middot; resize the selection &middot; scroll to zoom
                     </p>
                     <div id="acrop-wrap"><img id="acrop-img" src="${src}" alt=""></div>
                     <div id="acrop-bottom">
                         <div class="acrop-tool-group">
-                            <button class="acrop-tool-btn" id="acrop-rot-l" data-tooltip="Rotate Left">${ICONS.rotateL}</button>
-                            <button class="acrop-tool-btn" id="acrop-rot-r" data-tooltip="Rotate Right">${ICONS.rotateR}</button>
+                            <button class="acrop-tool-btn" id="acrop-rot-l" data-tooltip="rotate left">${ICONS.rotateL}</button>
+                            <button class="acrop-tool-btn" id="acrop-rot-r" data-tooltip="rotate right">${ICONS.rotateR}</button>
                         </div>
                         <div class="acrop-tool-group">
-                            <button class="acrop-tool-btn" id="acrop-flip-h" data-tooltip="Flip Horizontal">${ICONS.flipH}</button>
-                            <button class="acrop-tool-btn" id="acrop-flip-v" data-tooltip="Flip Vertical">${ICONS.flipV}</button>
+                            <button class="acrop-tool-btn" id="acrop-flip-h" data-tooltip="flip horizontal">${ICONS.flipH}</button>
+                            <button class="acrop-tool-btn" id="acrop-flip-v" data-tooltip="flip vertical">${ICONS.flipV}</button>
                         </div>
                         <div class="acrop-tool-group">
-                            <button class="acrop-tool-btn" id="acrop-reset" data-tooltip="Reset">${ICONS.reset}</button>
+                            <button class="acrop-tool-btn" id="acrop-reset" data-tooltip="reset">${ICONS.reset}</button>
                         </div>
                         <div id="acrop-bottom-spacer"></div>
-                        <div id="acrop-zoom-group">
-                            <span id="acrop-zoom-label">Zoom</span>
-                            <input type="range" id="acrop-zoom-slider" min="0.1" max="3" step="0.05" value="1">
-                        </div>
+
                         <div id="acrop-actions">
-                            <button class="acrop-btn" id="acrop-cancel">Cancel</button>
-                            <button class="acrop-btn" id="acrop-apply">${ICONS.check} Apply</button>
+                            <button class="acrop-btn" id="acrop-cancel">cancel</button>
+                            <button class="acrop-btn" id="acrop-apply">${ICONS.check} apply</button>
                         </div>
                     </div>
                 </div>
@@ -407,10 +345,6 @@
             highlight: false,
             cropBoxMovable: true,
             cropBoxResizable: true,
-            ready() {
-                const slider = document.getElementById('acrop-zoom-slider');
-                if (slider) slider.value = 1;
-            },
         });
 
         document.getElementById('acrop-apply').onclick = doApply;
@@ -427,22 +361,8 @@
         };
         document.getElementById('acrop-reset').onclick = () => {
             cropperInst.reset();
-            document.getElementById('acrop-zoom-slider').value = 1;
         };
 
-        const slider = document.getElementById('acrop-zoom-slider');
-        let lastRatio = 1;
-        slider.addEventListener('input', () => {
-            const newRatio = parseFloat(slider.value);
-            cropperInst.zoom(newRatio / lastRatio - 1);
-            lastRatio = newRatio;
-        });
-
-        img.addEventListener('zoom', (e) => {
-            const ratio = e.detail.ratio;
-            slider.value = Math.min(3, Math.max(0.1, ratio));
-            lastRatio = ratio;
-        });
 
         overlay.addEventListener('mousedown', (e) => {
             if (e.target === overlay) animateClose();
