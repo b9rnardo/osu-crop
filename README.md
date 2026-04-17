@@ -11,7 +11,7 @@ a tampermonkey userscript that adds a crop/rotate interface right on the account
 
 ## install
 
-1. install [tampermonkey](https://www.tampermonkey.net/) on chrome
+1. install [tampermonkey](https://www.tampermonkey.net/) 
 2. click **[install script](https://github.com/b9rnardo/osu-crop/raw/refs/heads/main/osu-crop.user.js)** 
 3. go to [osu! account settings](https://osu.ppy.sh/home/account/edit#avatar) and upload an image — the crop window will appear automatically
 
