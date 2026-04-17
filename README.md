@@ -8,7 +8,6 @@ a tampermonkey userscript that adds a crop/rotate interface right on the account
 - rotate left/right in 90° steps
 - scroll to zoom in/out
 - drag to reposition the image
-- ui styled to match osu!'s design
 
 ## install
 
