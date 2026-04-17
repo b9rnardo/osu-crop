@@ -1,21 +1,24 @@
 // ==UserScript==
 // @name         osu! crop
 // @namespace    https://osu.ppy.sh/
-// @version      1.0.0
+// @version      1.1.0
 // @description  Adds crop/resize interface to osu! avatar upload
 // @match        https://osu.ppy.sh/home/account/edit*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js
-// @resource     cropperCSS https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css
-// @grant        GM_addStyle
-// @grant        GM_getResourceText
+// @grant        none
 // ==/UserScript==
 
 (function () {
     'use strict';
 
-    GM_addStyle(GM_getResourceText('cropperCSS'));
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.css';
+    document.head.appendChild(link);
 
-    GM_addStyle(`
+
+    const style = document.createElement('style');
+    style.textContent = `
         #acrop-overlay {
             position: fixed;
             inset: 0;
@@ -131,7 +134,8 @@
         #acrop-wrap .cropper-point {
             background-color: #7047eb;
         }
-    `);
+    `;
+    document.head.appendChild(style);
 
     let cropperInst = null;
     let targetInput = null;
