@@ -6,8 +6,10 @@ a tampermonkey userscript that adds a crop/rotate interface right on the account
 
 - crop with a square selection (1:1 ratio, matches osu!'s avatar format)
 - rotate left/right in 90° steps
+- flip horizontally/vertically
 - scroll to zoom in/out
 - drag to reposition the image
+- reset all changes to default instantly
 
 ## install
 
