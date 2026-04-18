@@ -10,6 +10,7 @@ a tampermonkey userscript that adds a crop/rotate interface right on the account
 - scroll to zoom in/out
 - drag to reposition the image
 - reset all changes to default instantly
+- supports animated gifs (new!)
 
 ## install
 
