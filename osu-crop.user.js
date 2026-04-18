@@ -1,8 +1,8 @@
 // ==UserScript==
 // @name         osu! crop
 // @namespace    https://osu.ppy.sh/
-// @version      2.0.0
-// @description  Adds crop/resize interface to osu! avatar upload
+// @version      3.0.0
+// @description  adds crop/resize interface to osu! avatar upload 
 // @match        https://osu.ppy.sh/home/account/edit*
 // @require      https://cdnjs.cloudflare.com/ajax/libs/cropperjs/1.6.2/cropper.min.js
 // @grant        none
@@ -18,6 +18,72 @@
 
     const style = document.createElement('style');
     style.textContent = `
+
+        /* ── GIF warning ── */
+        #acrop-gif-warning {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 10px 14px;
+            border-radius: 10px;
+            background: rgba(255, 180, 50, 0.1);
+            border: 1px solid rgba(255, 180, 50, 0.25);
+        }
+        #acrop-gif-warning svg {
+            flex-shrink: 0;
+            color: #ffb432;
+        }
+        #acrop-gif-warning span {
+            color: #ddc080;
+            font-size: 11.5px;
+            font-family: 'Torus', 'Quicksand', sans-serif;
+            line-height: 1.5;
+            letter-spacing: 0.01em;
+        }
+        #acrop-use-original {
+            background: rgba(255, 180, 50, 0.12);
+            color: #ffcc66;
+            border: 1px solid rgba(255, 180, 50, 0.3);
+        }
+        #acrop-use-original:hover {
+            background: rgba(255, 180, 50, 0.22);
+            color: #ffdd88;
+        }
+        #acrop-use-original:active { transform: scale(0.96); }
+
+        /* ── progress overlay ── */
+        #acrop-progress-overlay {
+            position: absolute;
+            inset: 0;
+            background: rgba(17, 17, 27, 0.92);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            gap: 14px;
+            border-radius: 12px;
+            z-index: 10;
+        }
+        #acrop-progress-text {
+            color: #a0a0c0;
+            font-size: 13px;
+            font-family: 'Torus', 'Quicksand', sans-serif;
+            letter-spacing: 0.03em;
+        }
+        #acrop-progress-bar-wrap {
+            width: 60%;
+            height: 6px;
+            background: rgba(255,255,255,0.06);
+            border-radius: 3px;
+            overflow: hidden;
+        }
+        #acrop-progress-bar {
+            height: 100%;
+            width: 0%;
+            background: linear-gradient(90deg, #888, #bbb);
+            border-radius: 3px;
+            transition: width 0.15s ease;
+        }
 
         @keyframes acrop-overlay-in {
             from { opacity: 0; }
@@ -125,6 +191,7 @@
             overflow: hidden;
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.06);
+            position: relative;
         }
         #acrop-wrap img {
             display: block;
@@ -215,6 +282,11 @@
             align-items: center;
             gap: 8px;
         }
+        .acrop-btn:disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+            pointer-events: none;
+        }
         #acrop-cancel {
             background: rgba(255, 255, 255, 0.06);
             color: #a0a0c0;
@@ -291,12 +363,87 @@
         info: `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4m0-4h.01"/></svg>`,
         osu: `<svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="10" fill="none" stroke="white" stroke-width="1.5"/><circle cx="12" cy="12" r="6" fill="none" stroke="white" stroke-width="1.5"/><circle cx="12" cy="12" r="2.5" fill="white"/></svg>`,
         check: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M5 12l5 5L19 7"/></svg>`,
+        warn: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>`,
+        upload: `<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>`,
     };
 
     let cropperInst = null;
     let targetInput = null;
+    let currentFile = null;
+    let currentGifBuffer = null;
 
-    function openModal(src) {
+    // ── GIF library loading (fetch + blob to avoid cross-origin worker issues) ──
+    let _gifLibsReady = null;
+    let _gifWorkerBlobUrl = null;
+    let _parseGIF = null;
+    let _decompressFrames = null;
+
+    async function loadGifLibs() {
+        if (_gifLibsReady) return _gifLibsReady;
+        _gifLibsReady = (async () => {
+            // 1. Load gif.js (encoder) — fetch and eval as script
+            if (typeof GIF === 'undefined') {
+                const gifScript = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.js').then(r => r.text());
+                const s = document.createElement('script');
+                s.textContent = gifScript;
+                document.head.appendChild(s);
+            }
+
+            // 2. Load gif.js worker as blob URL (workers can't load cross-origin)
+            const workerCode = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js').then(r => r.text());
+            _gifWorkerBlobUrl = URL.createObjectURL(new Blob([workerCode], { type: 'application/javascript' }));
+
+            // 3. Load gifuct-js (parser) via dynamic import from jsdelivr ESM
+            try {
+                const mod = await import('https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/+esm');
+                _parseGIF = mod.parseGIF;
+                _decompressFrames = mod.decompressFrames;
+            } catch (e) {
+                // Fallback: fetch the CommonJS source and evaluate it
+                console.warn('[osu! crop] ESM import failed, using fetch fallback', e);
+                const libFiles = [
+                    'https://unpkg.com/js-binary-schema-parser@2.0.3/lib/schemas/gif.js',
+                    'https://unpkg.com/js-binary-schema-parser@2.0.3/lib/index.js',
+                    'https://unpkg.com/js-binary-schema-parser@2.0.3/lib/parsers/uint8.js',
+                    'https://unpkg.com/gifuct-js@2.1.2/lib/deinterlace.js',
+                    'https://unpkg.com/gifuct-js@2.1.2/lib/lzw.js',
+                    'https://unpkg.com/gifuct-js@2.1.2/lib/index.js',
+                ];
+                // Use the ESM version with a module script tag
+                const esmUrl = 'https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/+esm';
+                const code = await fetch(esmUrl).then(r => r.text());
+                // Create a module script that exposes the functions globally
+                const moduleCode = `
+                    import { parseGIF, decompressFrames } from 'https://cdn.jsdelivr.net/npm/gifuct-js@2.1.2/+esm';
+                    window.__gifuct_parseGIF = parseGIF;
+                    window.__gifuct_decompressFrames = decompressFrames;
+                `;
+                const blob = new Blob([moduleCode], { type: 'application/javascript' });
+                const blobUrl = URL.createObjectURL(blob);
+                const script = document.createElement('script');
+                script.type = 'module';
+                script.src = blobUrl;
+                document.head.appendChild(script);
+                // Wait for the module to load
+                await new Promise((resolve, reject) => {
+                    script.onload = resolve;
+                    script.onerror = reject;
+                });
+                // Give it a moment to execute
+                await new Promise(r => setTimeout(r, 200));
+                _parseGIF = window.__gifuct_parseGIF;
+                _decompressFrames = window.__gifuct_decompressFrames;
+                URL.revokeObjectURL(blobUrl);
+            }
+
+            if (!_parseGIF || !_decompressFrames) {
+                throw new Error('Failed to load gifuct-js');
+            }
+        })();
+        return _gifLibsReady;
+    }
+
+    function openModal(src, isGif) {
         const overlay = document.createElement('div');
         overlay.id = 'acrop-overlay';
         overlay.innerHTML = `
@@ -306,6 +453,10 @@
                     <h2>crop avatar!</h2>
                 </div>
                 <div id="acrop-body">
+                    ${isGif ? `<div id="acrop-gif-warning">
+                        ${ICONS.warn}
+                        <span>this is an animated GIF — the crop will preserve animation!</span>
+                    </div>` : ''}
                     <p id="acrop-hint">
                         ${ICONS.info}
                         drag to reposition &middot; resize the selection &middot; scroll to zoom
@@ -327,6 +478,7 @@
 
                         <div id="acrop-actions">
                             <button class="acrop-btn" id="acrop-cancel">cancel</button>
+                            ${isGif ? `<button class="acrop-btn" id="acrop-use-original">${ICONS.upload} upload original</button>` : ''}
                             <button class="acrop-btn" id="acrop-apply">${ICONS.check} apply</button>
                         </div>
                     </div>
@@ -347,7 +499,7 @@
             cropBoxResizable: true,
         });
 
-        document.getElementById('acrop-apply').onclick = doApply;
+        document.getElementById('acrop-apply').onclick = isGif ? doApplyGif : doApply;
         document.getElementById('acrop-cancel').onclick = animateClose;
         document.getElementById('acrop-rot-l').onclick = () => cropperInst.rotate(-90);
         document.getElementById('acrop-rot-r').onclick = () => cropperInst.rotate(90);
@@ -362,6 +514,11 @@
         document.getElementById('acrop-reset').onclick = () => {
             cropperInst.reset();
         };
+
+        const useOrigBtn = document.getElementById('acrop-use-original');
+        if (useOrigBtn) {
+            useOrigBtn.onclick = doUploadOriginal;
+        }
 
 
         overlay.addEventListener('mousedown', (e) => {
@@ -392,6 +549,39 @@
         document.getElementById('acrop-overlay')?.remove();
     }
 
+    function showProgress(text) {
+        const wrap = document.getElementById('acrop-wrap');
+        if (!wrap) return;
+        // Remove existing progress overlay
+        const existing = document.getElementById('acrop-progress-overlay');
+        if (existing) existing.remove();
+
+        const el = document.createElement('div');
+        el.id = 'acrop-progress-overlay';
+        el.innerHTML = `
+            <div id="acrop-progress-text">${text}</div>
+            <div id="acrop-progress-bar-wrap">
+                <div id="acrop-progress-bar"></div>
+            </div>
+        `;
+        wrap.appendChild(el);
+    }
+
+    function updateProgress(pct, text) {
+        const bar = document.getElementById('acrop-progress-bar');
+        if (bar) bar.style.width = pct + '%';
+        if (text) {
+            const txt = document.getElementById('acrop-progress-text');
+            if (txt) txt.textContent = text;
+        }
+    }
+
+    function setButtonsDisabled(disabled) {
+        const btns = document.querySelectorAll('#acrop-actions .acrop-btn, .acrop-tool-btn');
+        btns.forEach(btn => btn.disabled = disabled);
+    }
+
+    // ── Standard PNG crop (non-GIF) ──
     function doApply() {
         if (!cropperInst || !targetInput) return;
 
@@ -406,6 +596,229 @@
                 targetInput.dispatchEvent(new Event('change', { bubbles: true }));
             }, 260);
         }, 'image/png');
+    }
+
+    // ── Animated GIF crop ──
+    const GIF_MAX_SIZE = 128;
+    const GIF_MAX_BYTES = 87 * 1024; // 87 KB
+
+    // Renders cropped frames into a GIF blob at given quality/size/frameSet
+    function encodeGif(croppedFrames, outSize, quality, onProgress) {
+        return new Promise((resolve) => {
+            const encoder = new GIF({
+                workers: 2,
+                quality: quality,
+                width: outSize,
+                height: outSize,
+                workerScript: _gifWorkerBlobUrl,
+            });
+
+            for (const { canvas, delay } of croppedFrames) {
+                encoder.addFrame(canvas, { delay, copy: true });
+            }
+
+            if (onProgress) encoder.on('progress', onProgress);
+            encoder.on('finished', (blob) => resolve(blob));
+            encoder.render();
+        });
+    }
+
+    // Builds cropped frame canvases from parsed GIF data
+    function buildCroppedFrames(frames, gifWidth, gifHeight, cx, cy, cw, ch, outSize, frameIndices) {
+        const fullCanvas = document.createElement('canvas');
+        fullCanvas.width = gifWidth;
+        fullCanvas.height = gifHeight;
+        const fullCtx = fullCanvas.getContext('2d');
+
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = outSize;
+        cropCanvas.height = outSize;
+        const cropCtx = cropCanvas.getContext('2d');
+
+        const results = [];
+
+        for (let i = 0; i < frames.length; i++) {
+            const frame = frames[i];
+            const dims = frame.dims;
+
+            // Handle disposal
+            if (i > 0) {
+                const prevFrame = frames[i - 1];
+                if (prevFrame.disposalType === 2) {
+                    fullCtx.clearRect(
+                        prevFrame.dims.left, prevFrame.dims.top,
+                        prevFrame.dims.width, prevFrame.dims.height
+                    );
+                }
+            }
+
+            // Draw this frame's patch onto the full canvas
+            const frameImageData = new ImageData(
+                new Uint8ClampedArray(frame.patch),
+                dims.width,
+                dims.height
+            );
+            const patchCanvas = document.createElement('canvas');
+            patchCanvas.width = dims.width;
+            patchCanvas.height = dims.height;
+            patchCanvas.getContext('2d').putImageData(frameImageData, 0, 0);
+            fullCtx.drawImage(patchCanvas, dims.left, dims.top);
+
+            // Only include this frame if it's in our selected indices
+            if (!frameIndices.includes(i)) continue;
+
+            // Crop from full composite to output canvas
+            cropCtx.clearRect(0, 0, outSize, outSize);
+            cropCtx.drawImage(fullCanvas, cx, cy, cw, ch, 0, 0, outSize, outSize);
+
+            // Copy to a new canvas (gif.js needs its own canvas per frame)
+            const out = document.createElement('canvas');
+            out.width = outSize;
+            out.height = outSize;
+            out.getContext('2d').drawImage(cropCanvas, 0, 0);
+
+            // When dropping frames, double the delay to keep overall animation speed
+            const frameStep = frames.length / frameIndices.length;
+            results.push({
+                canvas: out,
+                delay: Math.round((frame.delay || 100) * frameStep),
+            });
+        }
+
+        return results;
+    }
+
+    async function doApplyGif() {
+        if (!cropperInst || !targetInput || !currentGifBuffer) return;
+
+        setButtonsDisabled(true);
+        showProgress('parsing GIF frames…');
+
+        try {
+            await loadGifLibs();
+            const parseGIF = _parseGIF;
+            const decompressFrames = _decompressFrames;
+
+            const gif = parseGIF(currentGifBuffer);
+            const frames = decompressFrames(gif, true);
+
+            if (!frames || frames.length === 0) {
+                doApply();
+                return;
+            }
+
+            const cropData = cropperInst.getData(true);
+            const gifWidth = gif.lsd.width;
+            const gifHeight = gif.lsd.height;
+
+            const cx = Math.max(0, Math.round(cropData.x));
+            const cy = Math.max(0, Math.round(cropData.y));
+            const cw = Math.round(cropData.width);
+            const ch = Math.round(cropData.height);
+
+            const outSize = GIF_MAX_SIZE; // 128x128
+
+            // Strategy: try progressively worse quality, then drop frames if needed
+            // quality in gif.js = pixel sample interval (1=best, higher=worse but smaller)
+            const qualitySteps = [10, 20, 30, 50, 80, 120];
+            const dropLevels = [1, 2, 3, 4]; // 1 = keep all, 2 = every other, 3 = every 3rd, etc.
+
+            let finalBlob = null;
+            let attempt = 0;
+            const totalAttempts = qualitySteps.length * dropLevels.length;
+
+            for (const drop of dropLevels) {
+                // Build frame index list
+                const frameIndices = [];
+                for (let i = 0; i < frames.length; i++) {
+                    if (i % drop === 0) frameIndices.push(i);
+                }
+                // Always need at least 2 frames for animation
+                if (frameIndices.length < 2 && frames.length >= 2) {
+                    frameIndices.length = 0;
+                    frameIndices.push(0, frames.length - 1);
+                }
+
+                for (const q of qualitySteps) {
+                    attempt++;
+                    const dropLabel = drop > 1 ? `, dropping ${Math.round((1 - 1 / drop) * 100)}% frames` : '';
+                    updateProgress(
+                        Math.round((attempt / totalAttempts) * 100),
+                        `attempt ${attempt}: quality=${q}${dropLabel} (${frameIndices.length} frames)…`
+                    );
+
+                    const croppedFrames = buildCroppedFrames(
+                        frames, gifWidth, gifHeight,
+                        cx, cy, cw, ch, outSize, frameIndices
+                    );
+
+                    const blob = await encodeGif(croppedFrames, outSize, q, (p) => {
+                        updateProgress(
+                            Math.round((attempt / totalAttempts) * 100),
+                            `encoding… quality=${q}${dropLabel}`
+                        );
+                    });
+
+                    const sizeKB = (blob.size / 1024).toFixed(1);
+                    console.log(`[osu! crop] attempt ${attempt}: q=${q}, drop=${drop}, frames=${frameIndices.length}, size=${sizeKB}KB`);
+
+                    if (blob.size <= GIF_MAX_BYTES) {
+                        finalBlob = blob;
+                        break;
+                    }
+                }
+
+                if (finalBlob) break;
+            }
+
+            // If still too large after all attempts, use the last blob anyway with a warning
+            if (!finalBlob) {
+                console.warn('[osu! crop] Could not fit GIF under 87KB, using best effort result');
+                // Last resort: just encode with maximum compression
+                const lastFrameIndices = [0, Math.floor(frames.length / 2), frames.length - 1]
+                    .filter((v, i, a) => a.indexOf(v) === i);
+                const lastCropped = buildCroppedFrames(
+                    frames, gifWidth, gifHeight,
+                    cx, cy, cw, ch, outSize, lastFrameIndices
+                );
+                finalBlob = await encodeGif(lastCropped, outSize, 120);
+            }
+
+            const finalSizeKB = (finalBlob.size / 1024).toFixed(1);
+            updateProgress(100, `done! final size: ${finalSizeKB}KB`);
+
+            // Brief delay so user can see the final size
+            await new Promise(r => setTimeout(r, 600));
+
+            const dt = new DataTransfer();
+            dt.items.add(new File([finalBlob], 'avatar.gif', { type: 'image/gif' }));
+            targetInput.files = dt.files;
+            targetInput._skipCrop = true;
+            animateClose();
+            setTimeout(() => {
+                targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+            }, 260);
+
+        } catch (err) {
+            console.error('[osu! crop] GIF processing error:', err);
+            setButtonsDisabled(false);
+            const progOverlay = document.getElementById('acrop-progress-overlay');
+            if (progOverlay) progOverlay.remove();
+            doApply();
+        }
+    }
+
+    function doUploadOriginal() {
+        if (!targetInput || !currentFile) return;
+
+        const dt = new DataTransfer();
+        dt.items.add(currentFile);
+        targetInput.files = dt.files;
+        targetInput._skipCrop = true;
+        animateClose();
+        setTimeout(() => {
+            targetInput.dispatchEvent(new Event('change', { bubbles: true }));
+        }, 260);
     }
 
     window.addEventListener('change', function (e) {
@@ -423,9 +836,27 @@
         e.stopImmediatePropagation();
 
         targetInput = input;
-        const reader = new FileReader();
-        reader.onload = ev => openModal(ev.target.result);
-        reader.readAsDataURL(file);
+        currentFile = file;
+        const isGif = file.type === 'image/gif';
+
+        if (isGif) {
+            // Read both as DataURL (for preview) and ArrayBuffer (for frame parsing)
+            const readerURL = new FileReader();
+            readerURL.onload = ev => {
+                const readerBuf = new FileReader();
+                readerBuf.onload = bufEv => {
+                    currentGifBuffer = bufEv.target.result;
+                    openModal(ev.target.result, true);
+                };
+                readerBuf.readAsArrayBuffer(file);
+            };
+            readerURL.readAsDataURL(file);
+        } else {
+            currentGifBuffer = null;
+            const reader = new FileReader();
+            reader.onload = ev => openModal(ev.target.result, false);
+            reader.readAsDataURL(file);
+        }
     }, true);
 
 })();
